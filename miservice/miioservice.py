@@ -4,21 +4,26 @@ import base64
 import hashlib
 import hmac
 import json
+from .door import Door
+
+from .miaccount import get_random
 
 # REGIONS = ['cn', 'de', 'i2', 'ru', 'sg', 'us']
 
-
 class MiIOService:
+
+    lastHandledTs = 0
 
     def __init__(self, account=None, region=None):
         self.account = account
         self.server = 'https://' + ('' if region is None or region == 'cn' else region + '.') + 'api.io.mi.com/app'
+        self.door = Door("")
 
     async def miio_request(self, uri, data):
         def prepare_data(token, cookies):
             cookies['PassportDeviceId'] = token['deviceId']
             return MiIOService.sign_data(uri, data, token['xiaomiio'][0])
-        headers = {'User-Agent': 'iOS-14.4-6.0.103-iPhone12,3--D7744744F7AF32F0544445285880DD63E47D9BE9-8816080-84A3F44E137B71AE-iPhone', 'x-xiaomi-protocal-flag-cli': 'PROTOCAL-HTTP2'}
+        headers = {'User-Agent': 'iOS-18.0-9.1.200-iPhone15,3--D7744744F7AF32F0544445285880DD63E47D9BE9-8816080-84A3F44E137B71AE-iPhone', 'X-XIAOMI-PROTOCAL-FLAG-CLI': 'PROTOCAL-HTTP2'}
         resp = await self.account.mi_request('xiaomiio', self.server + uri, prepare_data, headers)
         if 'result' not in resp:
             raise Exception(f"Error {uri}: {resp}")
@@ -67,6 +72,59 @@ class MiIOService:
         result = await self.miio_request('/home/device_list', {'getVirtualModel': bool(getVirtualModel), 'getHuamiDevices': int(getHuamiDevices)})
         result = result['list']
         return result if name == 'full' else [{'name': i['name'], 'model': i['model'], 'did': i['did'], 'token': i['token']} for i in result if not name or name in i['name']]
+
+
+    def query_door_filter(self, record):
+        return record['time'] > self.lastHandledTs and (
+                "开单元" in record['query']
+                or "单元门" in record['query']
+                or "打开单元门" in record['query']
+                or "打开单" in record['query']
+        )
+
+    def ms_to_date(self, ms):
+        seconds = ms / 1000
+        struct_time = time.localtime(seconds)
+        return time.strftime('%Y-%m-%d %H:%M:%S', struct_time)
+
+    async def handle_door_commands(self):
+        while True:
+            await self.get_conversations()
+            time.sleep(2)
+
+    async def get_conversations(self):
+        requestId = 'app_ios_' + get_random(30)
+        uri = 'https://userprofile.mina.mi.com/device_profile/v2/conversation'
+        headers = {'User-Agent': 'MiHome/9.8.201 (iPhone; iOS 18.0; Scale/3.00)'}
+        params = {
+            'requestId': requestId,
+            'limit': 5,
+            'hardware': 'LX05'
+        }
+        sid = "micoapi"
+        cookies_add = {'deviceId': '7ac8f9c4-c7ac-4c26-aeaa-335c16da131d'}
+        if self.lastHandledTs == 0:
+            self.lastHandledTs = (time.time() - 5 ) * 1000 # 5秒前
+        print("=== 时间:", self.ms_to_date(time.time() * 1000 ), " ===")
+        resp = await self.account.mi_request(sid, uri, None, headers, params=params, cookies_add=cookies_add)
+        if resp['code'] == 0:
+            data = json.loads(resp['data'])
+            records = data['records']
+            filter_records = [ record for record in records if self.query_door_filter(record) ]
+            if len(filter_records) > 0:
+                print("=== 收到小爱命令 ===")
+                record = filter_records[0]
+                self.lastHandledTs = record['time']
+                print("=== 命令内容:", record['query'], " ===")
+                print("=== 命令时间:", self.ms_to_date(self.lastHandledTs), " ===")
+                message = await self.door.open_door()
+                await self.miot_action(os.environ.get('MI_DID'), [5, 1], [message])
+                print("=== 完成处理小爱命令 ===")
+            else:
+                print("=== 暂时没有收到小爱命令 ===")
+        else:
+            print("无法获取对话列表")
+        return "OK"
 
     async def miot_spec(self, type=None, format=None):
         if not type or not type.startswith('urn'):

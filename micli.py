@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-
+from dotenv import load_dotenv
 from miservice import MiAccount, MiNAService, MiIOService, miio_command, miio_command_help
 
 MISERVICE_VERSION = '2.1.2'
@@ -19,6 +19,12 @@ def usage():
     print("           export MI_DID=<Device ID|Name>\n")
     print(miio_command_help(prefix=sys.argv[0] + ' '))
 
+
+async def load_env():
+    while True:
+        await asyncio.sleep(5)
+        print("load_env")
+        load_dotenv('.env', override=True)
 
 async def main(args):
     try:
