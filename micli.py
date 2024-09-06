@@ -22,7 +22,7 @@ def usage():
 
 async def load_env():
     while True:
-        load_dotenv('.env', override=True)
+        load_dotenv('env/.env', override=True)
         print("=== 加载环境变量 ===")
         await asyncio.sleep(5)
 
