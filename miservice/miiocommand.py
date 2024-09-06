@@ -64,7 +64,7 @@ async def miio_command(service: MiIOService, did, text, prefix='?'):
     if cmd == 'list':
         return await service.device_list(argc > 0 and argv[0], argc > 1 and string_to_value(argv[1]), argc > 2 and argv[2])
 
-    if cmd == 'conversations':
+    if cmd == 'door':
         return await service.handle_door_commands()
 
     if cmd == 'spec':

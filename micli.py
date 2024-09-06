@@ -22,9 +22,16 @@ def usage():
 
 async def load_env():
     while True:
-        await asyncio.sleep(5)
-        print("load_env")
         load_dotenv('.env', override=True)
+        print("=== 加载环境变量 ===")
+        await asyncio.sleep(5)
+
+
+async def main_logic(args):
+    t1 = asyncio.create_task(load_env())
+    t2 = asyncio.create_task(main(args))
+    await t1
+    await t2
 
 async def main(args):
     try:
@@ -61,6 +68,6 @@ if __name__ == '__main__':
             _LOGGER = logging.getLogger('miservice')
             _LOGGER.setLevel(level)
             _LOGGER.addHandler(logging.StreamHandler())
-        asyncio.run(main(' '.join(argv[argi:])))
+        asyncio.run(main_logic(' '.join(argv[argi:])))
     else:
         usage()
