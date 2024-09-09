@@ -11,6 +11,8 @@ from miservice import MiAccount, MiNAService, MiIOService, miio_command, miio_co
 
 MISERVICE_VERSION = '2.1.2'
 
+MAIN_END = False
+
 def usage():
     print("MiService %s - XiaoMi Cloud Service\n" % MISERVICE_VERSION)
     print("Usage: The following variables must be set:")
@@ -25,6 +27,8 @@ async def load_env():
         load_dotenv('env/.env', override=True)
         print("=== 加载环境变量 ===")
         await asyncio.sleep(5)
+        if MAIN_END:
+            break
 
 
 async def main_logic(args):
@@ -51,6 +55,8 @@ async def main(args):
                 result = json.dumps(result, indent=2, ensure_ascii=False)
     except Exception as e:
         result = e
+    global MAIN_END
+    MAIN_END = True
     print(result)
 
 if __name__ == '__main__':

@@ -89,30 +89,33 @@ class MiIOService:
 
     async def handle_door_commands(self):
         while True:
-            await self.get_conversations()
+            speaker_ids = os.environ.get('MI_SPEAKER_IDS').split(',')
+            for speaker_id in speaker_ids:
+                speaker_info = speaker_id.split('@')
+                await self.get_conversations(speaker_info[0], speaker_info[1])
             time.sleep(2)
 
-    async def get_conversations(self):
+    async def get_conversations(self, deviceid, hardware):
         requestId = 'app_ios_' + get_random(30)
         uri = 'https://userprofile.mina.mi.com/device_profile/v2/conversation'
         headers = {'User-Agent': 'MiHome/9.8.201 (iPhone; iOS 18.0; Scale/3.00)'}
         params = {
             'requestId': requestId,
             'limit': 5,
-            'hardware': 'LX05'
+            'hardware': hardware
         }
         sid = "micoapi"
-        cookies_add = {'deviceId': '7ac8f9c4-c7ac-4c26-aeaa-335c16da131d'}
+        cookies_add = {'deviceId': deviceid}
         if self.lastHandledTs == 0:
             self.lastHandledTs = (time.time() - 5 ) * 1000 # 5秒前
-        print("=== 时间:", self.ms_to_date(time.time() * 1000 ), " ===")
+        print("=== Model:", hardware, " 时间:", self.ms_to_date(time.time() * 1000), " ===")
         resp = await self.account.mi_request(sid, uri, None, headers, params=params, cookies_add=cookies_add)
         if resp['code'] == 0:
             data = json.loads(resp['data'])
             records = data['records']
             filter_records = [ record for record in records if self.query_door_filter(record) ]
             if len(filter_records) > 0:
-                print("=== 收到小爱命令 ===")
+                print("=== 收到小爱", hardware ,"命令 ===")
                 record = filter_records[0]
                 self.lastHandledTs = record['time']
                 print("=== 命令内容:", record['query'], " ===")

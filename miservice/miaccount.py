@@ -115,7 +115,9 @@ class MiAccount:
         return serviceToken
 
     async def mi_request(self, sid, url, data, headers, relogin=True, params=None, cookies_add=None):
-        if self.token is None and self.token_store is not None:
+
+        # if relogin is false, means we meet 401 and need to ensure login
+        if relogin == True and self.token is None and self.token_store is not None:
             self.token = await self.token_store.load_token()
         if (self.token and sid in self.token) or await self.login(sid):  # Ensure login
             cookies = {'userId': self.token['userId'], 'serviceToken': self.token[sid][1]}
