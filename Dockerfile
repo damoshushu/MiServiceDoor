@@ -3,6 +3,8 @@ FROM  python:3.12.5-slim-bookworm
 # 设置工作目录
 WORKDIR /app
 
+ENV TZ Asia/Shanghai
+
 ENV PYTHONUNBUFFERED=1
 
 COPY . .
