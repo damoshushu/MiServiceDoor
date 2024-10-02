@@ -4,33 +4,42 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 from .door import Door
+from .ark import ARK
 
 from .miaccount import get_random
+
 
 # REGIONS = ['cn', 'de', 'i2', 'ru', 'sg', 'us']
 
 class MiIOService:
-
-    lastHandledTs = 0
+    last_handled_ts = 0
 
     def __init__(self, account=None, region=None):
         self.account = account
         self.server = 'https://' + ('' if region is None or region == 'cn' else region + '.') + 'api.io.mi.com/app'
         self.door = Door("")
+        self.ark = ARK()
+        print("服务启动成功...")
 
     async def miio_request(self, uri, data):
         def prepare_data(token, cookies):
             cookies['PassportDeviceId'] = token['deviceId']
             return MiIOService.sign_data(uri, data, token['xiaomiio'][0])
-        headers = {'User-Agent': 'iOS-18.0-9.1.200-iPhone15,3--D7744744F7AF32F0544445285880DD63E47D9BE9-8816080-84A3F44E137B71AE-iPhone', 'X-XIAOMI-PROTOCAL-FLAG-CLI': 'PROTOCAL-HTTP2'}
+
+        headers = {
+            'User-Agent': 'iOS-18.0-9.1.200-iPhone15,3--D7744744F7AF32F0544445285880DD63E47D9BE9-8816080-84A3F44E137B71AE-iPhone',
+            'X-XIAOMI-PROTOCAL-FLAG-CLI': 'PROTOCAL-HTTP2'}
         resp = await self.account.mi_request('xiaomiio', self.server + uri, prepare_data, headers)
         if 'result' not in resp:
             raise Exception(f"Error {uri}: {resp}")
         return resp['result']
 
     async def home_request(self, did, method, params):
-        return await self.miio_request('/home/rpc/' + did, {'id': 1, 'method': method, "accessKey": "IOS00026747c5acafc2", 'params': params})
+        return await self.miio_request('/home/rpc/' + did,
+                                       {'id': 1, 'method': method, "accessKey": "IOS00026747c5acafc2",
+                                        'params': params})
 
     async def home_get_props(self, did, props):
         return await self.home_request(did, 'get_prop', props)
@@ -69,17 +78,20 @@ class MiIOService:
         return result.get('code', -1)
 
     async def device_list(self, name=None, getVirtualModel=False, getHuamiDevices=0):
-        result = await self.miio_request('/home/device_list', {'getVirtualModel': bool(getVirtualModel), 'getHuamiDevices': int(getHuamiDevices)})
+        result = await self.miio_request('/home/device_list', {'getVirtualModel': bool(getVirtualModel),
+                                                               'getHuamiDevices': int(getHuamiDevices)})
         result = result['list']
-        return result if name == 'full' else [{'name': i['name'], 'model': i['model'], 'did': i['did'], 'token': i['token']} for i in result if not name or name in i['name']]
-
+        return result if name == 'full' else [
+            {'name': i['name'], 'model': i['model'], 'did': i['did'], 'token': i['token']} for i in result if
+            not name or name in i['name']]
 
     def query_door_filter(self, record):
-        return record['time'] > self.lastHandledTs and (
+        return record['time'] > self.last_handled_ts and (
                 "开单元" in record['query']
                 or "单元门" in record['query']
                 or "打开单元门" in record['query']
                 or "打开单" in record['query']
+                or "豆包" in record['query']
         )
 
     def ms_to_date(self, ms):
@@ -92,10 +104,10 @@ class MiIOService:
             speaker_ids = os.environ.get('MI_SPEAKER_IDS').split(',')
             for speaker_id in speaker_ids:
                 speaker_info = speaker_id.split('@')
-                await self.get_conversations(speaker_info[0], speaker_info[1])
+                await self.process_conversations(speaker_info[0], speaker_info[1], speaker_info[2])
             time.sleep(2)
 
-    async def get_conversations(self, deviceid, hardware):
+    async def process_conversations(self, deviceid, hardware, mi_did):
         requestId = 'app_ios_' + get_random(30)
         uri = 'https://userprofile.mina.mi.com/device_profile/v2/conversation'
         headers = {'User-Agent': 'MiHome/9.8.201 (iPhone; iOS 18.0; Scale/3.00)'}
@@ -106,27 +118,32 @@ class MiIOService:
         }
         sid = "micoapi"
         cookies_add = {'deviceId': deviceid}
-        if self.lastHandledTs == 0:
-            self.lastHandledTs = (time.time() - 5 ) * 1000 # 5秒前
-        print("=== Model:", hardware, " 时间:", self.ms_to_date(time.time() * 1000), " ===")
+        if self.last_handled_ts == 0:
+            self.last_handled_ts = (time.time() - 5) * 1000  # 5秒前
+        # print("=== Model:", hardware, " 时间:", self.ms_to_date(time.time() * 1000), " ===")
         resp = await self.account.mi_request(sid, uri, None, headers, params=params, cookies_add=cookies_add)
         if resp['code'] == 0:
             data = json.loads(resp['data'])
             records = data['records']
-            filter_records = [ record for record in records if self.query_door_filter(record) ]
+            filter_records = [record for record in records if self.query_door_filter(record)]
             if len(filter_records) > 0:
-                print("=== 收到小爱", hardware ,"命令 ===")
+                print("=== 收到小爱", hardware, "命令 ===")
                 record = filter_records[0]
-                self.lastHandledTs = record['time']
                 print("=== 命令内容:", record['query'], " ===")
-                print("=== 命令时间:", self.ms_to_date(self.lastHandledTs), " ===")
-                message = await self.door.open_door()
-                await self.miot_action(os.environ.get('MI_DID'), [5, 1], [message])
+                print("=== 命令时间:", self.ms_to_date(record['time']), " ===")
+                if "豆包" in record['query']:
+                    await self.miot_action(mi_did, [5, 1], ["让我想想"])
+                    message = await self.ark.chat(record['query'])
+                else:
+                    message = await self.door.open_door()
+                await self.miot_action(mi_did, [5, 1], [re.sub(r'[\\\n\-]', ' ', message)])
                 print("=== 完成处理小爱命令 ===")
             else:
-                print("=== 暂时没有收到小爱命令 ===")
+                pass
+                #print("=== 暂时没有收到小爱命令 ===")
         else:
             print("无法获取对话列表")
+        self.last_handled_ts = time.time() * 1000
         return "OK"
 
     async def miot_spec(self, type=None, format=None):
@@ -141,6 +158,7 @@ class MiIOService:
                     elif type in m:
                         ret[m] = t
                 return ret
+
             import tempfile
             path = os.path.join(tempfile.gettempdir(), 'miservice_miot_specs.json')
             try:
@@ -180,7 +198,9 @@ class MiIOService:
             return f"    {'' if readable else '_'}{desc} = {value}{comment}\n"
 
         if format != 'json':
-            STR_HEAD, STR_SRV, STR_VALUE = ('from enum import Enum\n\n', '\nclass {}(tuple, Enum):\n', '\nclass {}(int, Enum):\n') if format == 'python' else ('', '{} = {}\n', '{}\n')
+            STR_HEAD, STR_SRV, STR_VALUE = ('from enum import Enum\n\n', '\nclass {}(tuple, Enum):\n',
+                                            '\nclass {}(int, Enum):\n') if format == 'python' else (
+                '', '{} = {}\n', '{}\n')
             text = '# Generated by https://github.com/Yonsm/MiService\n# ' + url + '\n\n' + STR_HEAD
             svcs = []
             vals = []
@@ -194,14 +214,19 @@ class MiIOService:
                     name, comment = parse_desc(p)
                     access = p['access']
 
-                    comment += ''.join(['  # ' + k for k, v in [(p['format'], 'string'), (''.join([a[0] for a in access]), 'r')] if k and k != v])
+                    comment += ''.join(
+                        ['  # ' + k for k, v in [(p['format'], 'string'), (''.join([a[0] for a in access]), 'r')] if
+                         k and k != v])
                     text += make_line(siid, p['iid'], name, comment, 'read' in access)
                     if 'value-range' in p:
                         valuer = p['value-range']
                         length = min(3, len(valuer))
-                        values = {['MIN', 'MAX', 'STEP'][i]: valuer[i] for i in range(length) if i != 2 or valuer[i] != 1}
+                        values = {['MIN', 'MAX', 'STEP'][i]: valuer[i] for i in range(length) if
+                                  i != 2 or valuer[i] != 1}
                     elif 'value-list' in p:
-                        values = {i['description'].replace(' ', '_') if i['description'] else str(i['value']): i['value'] for i in p['value-list']}
+                        values = {
+                            i['description'].replace(' ', '_') if i['description'] else str(i['value']): i['value'] for
+                            i in p['value-list']}
                     else:
                         continue
                     vals.append((svc + '_' + name, values))
