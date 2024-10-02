@@ -107,6 +107,7 @@ class MiIOService:
                 await self.process_conversations(speaker_info[0], speaker_info[1], speaker_info[2])
             time.sleep(2)
 
+
     async def process_conversations(self, deviceid, hardware, mi_did):
         requestId = 'app_ios_' + get_random(30)
         uri = 'https://userprofile.mina.mi.com/device_profile/v2/conversation'
@@ -118,8 +119,7 @@ class MiIOService:
         }
         sid = "micoapi"
         cookies_add = {'deviceId': deviceid}
-        if self.last_handled_ts == 0:
-            self.last_handled_ts = (time.time() - 5) * 1000  # 5秒前
+        self.last_handled_ts = (time.time() - 5) * 1000  # 5秒前
         # print("=== Model:", hardware, " 时间:", self.ms_to_date(time.time() * 1000), " ===")
         resp = await self.account.mi_request(sid, uri, None, headers, params=params, cookies_add=cookies_add)
         if resp['code'] == 0:
@@ -143,7 +143,6 @@ class MiIOService:
                 #print("=== 暂时没有收到小爱命令 ===")
         else:
             print("无法获取对话列表")
-        self.last_handled_ts = time.time() * 1000
         return "OK"
 
     async def miot_spec(self, type=None, format=None):
